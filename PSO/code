@@ -1,0 +1,88 @@
+import numpy as np
+
+# Parameters
+num_particles = 30
+num_iterations = 100
+
+# Define boundaries for ligand pose parameters (x, y, z, rotation_angle)
+bounds = {
+    'x': (-10, 10),
+    'y': (-10, 10),
+    'z': (-10, 10),
+    'theta': (0, 360)  # rotation angle in degrees
+}
+
+# Initialize particle positions and velocities randomly within bounds
+def initialize_particles(num_particles, bounds):
+    particles = []
+    velocities = []
+    for _ in range(num_particles):
+        pos = np.array([
+            np.random.uniform(*bounds['x']),
+            np.random.uniform(*bounds['y']),
+            np.random.uniform(*bounds['z']),
+            np.random.uniform(*bounds['theta'])
+        ])
+        vel = np.zeros_like(pos)
+        particles.append(pos)
+        velocities.append(vel)
+    return np.array(particles), np.array(velocities)
+
+# Mock fitness function (binding energy), lower is better
+# Here, just a function that prefers positions near (0,0,0) and rotation ~180 degrees
+def fitness_function(pose):
+    x, y, z, theta = pose
+    # Penalize distance from origin (allosteric site center)
+    dist = np.linalg.norm([x, y, z])
+    # Penalize deviation from ideal rotation (180 degrees)
+    rot_penalty = min(abs(theta - 180), 360 - abs(theta - 180))
+    return dist + rot_penalty * 0.1  # weights can be adjusted
+
+# PSO update rules
+def update_velocity(velocity, position, personal_best, global_best, w=0.5, c1=1, c2=2):
+    r1, r2 = np.random.rand(2)
+    new_velocity = (w * velocity +
+                    c1 * r1 * (personal_best - position) +
+                    c2 * r2 * (global_best - position))
+    return new_velocity
+
+def apply_bounds(position, bounds):
+    for i, key in enumerate(['x', 'y', 'z', 'theta']):
+        low, high = bounds[key]
+        if position[i] < low:
+            position[i] = low
+        elif position[i] > high:
+            position[i] = high
+    return position
+
+# Initialize particles and velocities
+particles, velocities = initialize_particles(num_particles, bounds)
+personal_best_positions = particles.copy()
+personal_best_scores = np.array([fitness_function(p) for p in particles])
+global_best_index = np.argmin(personal_best_scores)
+global_best_position = personal_best_positions[global_best_index]
+global_best_score = personal_best_scores[global_best_index]
+
+# PSO main loop
+for iter in range(num_iterations):
+    for i in range(num_particles):
+        velocities[i] = update_velocity(velocities[i], particles[i], personal_best_positions[i], global_best_position)
+        particles[i] += velocities[i]
+        particles[i] = apply_bounds(particles[i], bounds)
+       
+        score = fitness_function(particles[i])
+        # Update personal best
+        if score < personal_best_scores[i]:
+            personal_best_scores[i] = score
+            personal_best_positions[i] = particles[i].copy()
+           
+            # Update global best
+            if score < global_best_score:
+                global_best_score = score
+                global_best_position = particles[i].copy()
+   
+    if iter % 10 == 0 or iter == num_iterations -1:
+        print(f"Iteration {iter}: Best score = {global_best_score:.4f}")
+
+print("\nOptimized ligand pose (x, y, z, rotation angle):")
+print(global_best_position)
