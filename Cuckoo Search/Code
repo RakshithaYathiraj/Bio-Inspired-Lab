@@ -1,0 +1,144 @@
+import numpy as np
+import math  # Needed for gamma function in Levy flight
+
+# Objective function example: Sphere function (minimize sum of squares)
+def objective_function(x):
+    return np.sum(x ** 2)
+
+# Levy flight function for Cuckoo Search
+def levy_flight(Lambda, dim):
+    sigma_u = (math.gamma(1 + Lambda) * np.sin(np.pi * Lambda / 2) / 
+               (math.gamma((1 + Lambda) / 2) * Lambda * 2 ** ((Lambda - 1) / 2))) ** (1 / Lambda)
+    u = np.random.normal(0, sigma_u, size=dim)
+    v = np.random.normal(0, 1, size=dim)
+    step = u / (abs(v) ** (1 / Lambda))
+    return step
+
+class Particle:
+    def __init__(self, dim, bounds):
+        self.position = np.random.uniform(bounds[0], bounds[1], dim)
+        self.velocity = np.zeros(dim)
+        self.personal_best = np.copy(self.position)
+        self.personal_best_fitness = float('inf')
+
+    def update_velocity(self, global_best, w=0.5, c1=2, c2=2):
+        r1, r2 = np.random.rand(2)
+        cognitive = c1 * r1 * (self.personal_best - self.position)
+        social = c2 * r2 * (global_best - self.position)
+        self.velocity = w * self.velocity + cognitive + social
+
+    def update_position(self, bounds):
+        self.position += self.velocity
+        # Keep particles within bounds
+        self.position = np.clip(self.position, bounds[0], bounds[1])
+
+class Cuckoo:
+    def __init__(self, dim, bounds):
+        self.position = np.random.uniform(bounds[0], bounds[1], dim)
+        self.fitness = float('inf')
+
+    def levy_flight_move(self, best_position, bounds, Lambda=1.5, step_size=0.01):
+        step = levy_flight(Lambda, len(self.position))
+        self.position += step_size * step * (self.position - best_position)
+        self.position = np.clip(self.position, bounds[0], bounds[1])
+
+def PS_CS_optimization(objective_function, dim, bounds, N_particles=30, M_cuckoos=20, max_iter=100, k=0.3):
+    # Initialize PSO particles
+    particles = [Particle(dim, bounds) for _ in range(N_particles)]
+    # Initialize CS cuckoos
+    cuckoos = [Cuckoo(dim, bounds) for _ in range(M_cuckoos)]
+
+    global_best = None
+    global_best_fitness = float('inf')
+
+    for iteration in range(max_iter):
+        # Evaluate particles fitness
+        for p in particles:
+            fitness = objective_function(p.position)
+            if fitness < p.personal_best_fitness:
+                p.personal_best = np.copy(p.position)
+                p.personal_best_fitness = fitness
+            if fitness < global_best_fitness:
+                global_best = np.copy(p.position)
+                global_best_fitness = fitness
+
+        # Evaluate cuckoos fitness
+        for c in cuckoos:
+            c.fitness = objective_function(c.position)
+
+        # PSO update for particles
+        for p in particles:
+            p.update_velocity(global_best)
+            p.update_position(bounds)
+
+            fitness = objective_function(p.position)
+            if fitness < p.personal_best_fitness:
+                p.personal_best = np.copy(p.position)
+                p.personal_best_fitness = fitness
+            if fitness < global_best_fitness:
+                global_best = np.copy(p.position)
+                global_best_fitness = fitness
+
+        # Update cuckoos using Levy flights
+        for c in cuckoos:
+            # Choose a random cuckoo from nest (excluding self)
+            others = [ck for ck in cuckoos if ck != c]
+            other_cuckoo = np.random.choice(others)
+            old_fitness = c.fitness
+            c.levy_flight_move(best_position=global_best, bounds=bounds)
+            new_fitness = objective_function(c.position)
+            if new_fitness < old_fitness:
+                c.fitness = new_fitness
+            else:
+                # Revert if worse
+                c.position = np.copy(other_cuckoo.position)
+                c.fitness = objective_function(c.position)
+
+        # Update PSO particles using information from CS
+        particles.sort(key=lambda p: objective_function(p.position))
+        top_k = max(1, int(k * N_particles))
+
+        best_cuckoo = min(cuckoos, key=lambda c: c.fitness).position
+
+        for i, p in enumerate(particles):
+            if i < top_k:
+                p.position = np.copy(best_cuckoo)
+            else:
+                p.update_velocity(global_best)
+                p.update_position(bounds)
+
+        # PSO search on subset of cuckoos
+        subset_size = max(1, M_cuckoos // 5)  # e.g. 20% subset
+        subset = np.random.choice(cuckoos, subset_size, replace=False)
+
+        for c in subset:
+            for p in particles:
+                p_fitness = objective_function(p.position)
+                if p_fitness < c.fitness:
+                    c.position = np.copy(p.position)
+                    c.fitness = p_fitness
+
+        # Final update of particles (velocity & position)
+        for p in particles:
+            fitness = objective_function(p.position)
+            if fitness < p.personal_best_fitness:
+                p.personal_best = np.copy(p.position)
+                p.personal_best_fitness = fitness
+            if fitness < global_best_fitness:
+                global_best = np.copy(p.position)
+                global_best_fitness = fitness
+
+            p.update_velocity(global_best)
+            p.update_position(bounds)
+
+        print(f"Iteration {iteration + 1}/{max_iter} - Best Fitness: {global_best_fitness:.6f}")
+
+    return global_best, global_best_fitness
+
+# Example usage:
+if __name__ == "__main__":
+    dim = 5
+    bounds = (-10, 10)
+    best_solution, best_fitness = PS_CS_optimization(objective_function, dim, bounds, max_iter=50)
+    print("Best solution found:", best_solution)
+    print("Best fitness:", best_fitness)
