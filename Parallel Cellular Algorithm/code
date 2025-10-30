@@ -1,0 +1,67 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Parameters (simplified from Clarke et al. 1997)
+DIFFUSION = 0.2      # influence of neighboring urban cells
+BREED = 0.15         # random new urban centers
+SPREAD = 0.1         # slope penalty factor
+BOOM = 0.02          # spontaneous growth
+MAX_SLOPE = 30       # degrees
+YEARS = 50
+
+# Generate synthetic data
+np.random.seed(42)
+grid_size = (100, 100)
+urban = np.zeros(grid_size, dtype=int)
+roads = np.random.rand(*grid_size) < 0.05
+slope = np.random.rand(*grid_size) * MAX_SLOPE
+exclusion = np.random.rand(*grid_size) < 0.05
+
+def get_neighbors(grid, i, j):
+    return grid[max(i-1,0):i+2, max(j-1,0):j+2]
+
+def update_parameters(urban_fraction):
+    """Self-modification rule: parameters evolve as urban area increases."""
+    global DIFFUSION, BREED, SPREAD, BOOM
+    if urban_fraction > 0.4:  # late-stage growth
+        DIFFUSION *= 0.95
+        BREED *= 0.9
+        SPREAD *= 1.05
+    elif urban_fraction < 0.1:  # early-stage boom
+        BOOM *= 1.1
+
+def simulate_urban_growth():
+    global urban
+    for t in range(YEARS):
+        new_urban = urban.copy()
+        for i in range(grid_size[0]):
+            for j in range(grid_size[1]):
+                if exclusion[i, j] or urban[i, j]:
+                    continue
+
+                # compute transition probability
+                neighbors = np.sum(get_neighbors(urban, i, j))
+                neighborhood_effect = neighbors / 8.0
+                road_influence = 1.0 if roads[i, j] else 0.5
+                slope_factor = 1 - (slope[i, j] / MAX_SLOPE)
+                
+                P = (DIFFUSION * neighborhood_effect +
+                     BREED * road_influence -
+                     SPREAD * (1 - slope_factor) +
+                     BOOM)
+                
+                # Monte Carlo update
+                if np.random.rand() < P:
+                    new_urban[i, j] = 1
+
+        urban = new_urban
+        urban_fraction = np.mean(urban)
+        update_parameters(urban_fraction)
+        if t % 10 == 0:
+            print(f"Year {t}: {urban_fraction*100:.2f}% urbanized")
+
+simulate_urban_growth()
+
+plt.imshow(urban, cmap='hot')
+plt.title("Urbanization Simulation (Self-Modifying CA)")
+plt.show()
