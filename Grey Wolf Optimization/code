@@ -1,0 +1,87 @@
+import numpy as np
+import torch
+import torchvision
+from torchvision.models.detection import fasterrcnn_resnet50_fpn
+from torchvision.transforms import functional as F
+import cv2
+
+# -------------------- GWO Optimization --------------------
+def fitness_function(params):
+    # Simulated fitness score (replace with actual model evaluation)
+    score = np.random.rand()
+    return 1 - score  # Lower is better
+
+def gwo(num_wolves=10, dim=3, max_iter=20):
+    wolves = np.random.rand(num_wolves, dim)
+    alpha, beta, delta = None, None, None
+
+    for t in range(max_iter):
+        fitness = [fitness_function(w) for w in wolves]
+        sorted_idx = np.argsort(fitness)
+        alpha, beta, delta = wolves[sorted_idx[0]], wolves[sorted_idx[1]], wolves[sorted_idx[2]]
+
+        a = 2 - t * (2 / max_iter)
+        for i in range(num_wolves):
+            for j in range(dim):
+                r1, r2 = np.random.rand(), np.random.rand()
+                A1 = 2 * a * r1 - a
+                C1 = 2 * r2
+                D_alpha = abs(C1 * alpha[j] - wolves[i][j])
+                X1 = alpha[j] - A1 * D_alpha
+
+                r1, r2 = np.random.rand(), np.random.rand()
+                A2 = 2 * a * r1 - a
+                C2 = 2 * r2
+                D_beta = abs(C2 * beta[j] - wolves[i][j])
+                X2 = beta[j] - A2 * D_beta
+
+                r1, r2 = np.random.rand(), np.random.rand()
+                A3 = 2 * a * r1 - a
+                C3 = 2 * r2
+                D_delta = abs(C3 * delta[j] - wolves[i][j])
+                X3 = delta[j] - A3 * D_delta
+
+                wolves[i][j] = (X1 + X2 + X3) / 3
+
+    return alpha  # Best hyperparameters
+
+# -------------------- Face Detection --------------------
+def load_model():
+    model = fasterrcnn_resnet50_fpn(pretrained=True)
+    model.eval()
+    return model
+
+def detect_faces(model, image_path, confidence_threshold=0.5):
+    image = cv2.imread(image_path)
+
+    if image is None:
+        print(f"Error: Could not load image from {image_path}")
+        return
+
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    tensor = F.to_tensor(image_rgb)
+
+    with torch.no_grad():
+        predictions = model([tensor])[0]
+
+    for box, score in zip(predictions['boxes'], predictions['scores']):
+        if score >= confidence_threshold:
+            x1, y1, x2, y2 = box.int().tolist()
+            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+    cv2.imshow("Detected Faces", image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# -------------------- Main Execution --------------------
+if __name__ == "__main__":
+    print("Running GWO to optimize face detection parameters...")
+    best_params = gwo()
+    confidence_threshold = best_params[0]  # Use first param as threshold
+
+    print(f"Best confidence threshold from GWO: {confidence_threshold:.2f}")
+    model = load_model()
+
+    # Replace with your image path
+    image_path = "face_sample.jpg"
+    detect_faces(model, image_path, confidence_threshold)
